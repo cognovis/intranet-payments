@@ -11,7 +11,7 @@
 ------------------------------------------------------
 -- Payments
 --
--- Tracks the money coming into an invoice over time
+-- Tracks the money coming into an cost_item over time
 --
 
 create sequence im_payments_id_seq start with 10000;
@@ -19,9 +19,9 @@ create table im_payments (
 	payment_id		integer not null 
 				constraint im_payments_pk
 				primary key,
-	invoice_id		integer
+	cost_item_id		integer
 				constraint im_payments_invoice
-				references im_invoices,
+				references im_cost_items,
 				-- who pays?
 	customer_id		integer not null
 				constraint im_payments_customer
@@ -53,13 +53,47 @@ create table im_payments (
 		-- Make sure we don't get duplicated entries for 
 		-- whatever reason
 		constraint im_payments_un
-		unique (customer_id, invoice_id, provider_id, received_date, 
+		unique (customer_id, cost_item_id, provider_id, received_date, 
 			start_block, payment_type_id, currency)
 );
 
+------------------------------------------------------
+-- Permissions and Privileges
+--
+
+begin
+    acs_privilege.create_privilege('view_payments','View Payments','View Payments');
+    acs_privilege.create_privilege('add_payments','View Payments','View Payments');
+end;
+/
+show errors;
+
+
+
+BEGIN
+    im_priv_create('view_payments','Accounting');
+    im_priv_create('view_payments','P/O Admins');
+    im_priv_create('view_payments','Senior Managers');
+END;
+/
+show errors;
+
+BEGIN
+    im_priv_create('add_payments','Accounting');
+    im_priv_create('add_payments','P/O Admins');
+    im_priv_create('add_payments','Senior Managers');
+END;
+/
+show errors;
+
+
+------------------------------------------------------
+-- Audit all payment transactions
+--
+
 create table im_payments_audit (
 	payment_id		integer,
-	invoice_id		integer,
+	cost_item_id		integer,
 	customer_id		integer,
 	provider_id		integer,
 	received_date		date,
@@ -81,7 +115,7 @@ create or replace trigger im_payments_audit_tr
 	begin
 		insert into im_payments_audit (
 			payment_id,
-			invoice_id,
+			cost_item_id,
 			customer_id,
 			provider_id,
 			received_date,
@@ -96,7 +130,7 @@ create or replace trigger im_payments_audit_tr
 			modified_ip_address
 		) values (
 			:old.payment_id,
-			:old.invoice_id,
+			:old.cost_item_id,
 			:old.customer_id,
 			:old.provider_id,
 			:old.received_date,
@@ -130,7 +164,7 @@ where category_type = 'Intranet Invoice Payment Method';
 
 
 ------------------------------------------------------
--- Add a "New Payments" item into the Invoices submenu
+-- Add a "New Payments" item into the Cost_Items submenu
 ------------------------------------------------------
 
 BEGIN
@@ -143,7 +177,8 @@ commit;
 declare
         -- Menu IDs
         v_menu                  integer;
-	v_invoices_menu		integer;
+	v_finance_menu		integer;
+	v_invoices_new_menu	integer;
         -- Groups
         v_employees             integer;
         v_accounting            integer;
@@ -160,9 +195,9 @@ begin
     select group_id into v_freelancers from groups where group_name = 'Freelancers';
 
     select menu_id
-    into v_invoices_menu
+    into v_finance_menu
     from im_menus
-    where label='invoices';
+    where label='finance';
 
     delete from im_menus where package_name='intranet-payments';
 
@@ -172,7 +207,7 @@ begin
 	name =>		'Payments',
 	url =>		'/intranet-payments/index',
 	sort_order =>	20,
-	parent_menu_id => v_invoices_menu
+	parent_menu_id => v_finance_menu
     );
 
     acs_permission.grant_permission(v_menu, v_admins, 'read');
@@ -180,13 +215,21 @@ begin
     acs_permission.grant_permission(v_menu, v_accounting, 'read');
     acs_permission.grant_permission(v_menu, v_customers, 'read');
     acs_permission.grant_permission(v_menu, v_freelancers, 'read');
+
+
+    -- Add a line to the "Finance/New" page
+--    select menu_id
+--    into v_invoices_new_menu
+--    from im_menus
+--    where label='finance_new';
+
     v_menu := im_menu.new (
 	package_name =>	'intranet-payments',
 	label =>	'payments_new',
 	name =>		'New Payment',
-	url =>		'/intranet-payments/new',
+	url =>		'/intranet-payments/new?',
 	sort_order =>	90,
-	parent_menu_id => v_invoices_menu
+	parent_menu_id => v_menu
     );
 
     acs_permission.grant_permission(v_menu, v_admins, 'read');
@@ -211,28 +254,36 @@ values (32, 'payment_list', 'view_finance');
 --
 delete from im_view_columns where column_id > 3200 and column_id < 3299;
 --
-insert into im_view_columns values (3201,32,NULL,'Payment #',
+insert into im_view_columns (column_id, view_id, group_id, column_name, column_render_tcl,
+extra_select, extra_where, sort_order, visible_for) values (3201,32,NULL,'Payment #',
 '"<A HREF=/intranet-payments/view?payment_id=$payment_id>$payment_id</A>"','','',1,'');
 
-insert into im_view_columns values (3203,32,NULL,'Invoice',
+insert into im_view_columns (column_id, view_id, group_id, column_name, column_render_tcl,
+extra_select, extra_where, sort_order, visible_for) values (3203,32,NULL,'Invoice',
 '"<A HREF=/intranet-invoices/view?invoice_id=$invoice_id>$invoice_nr</A>"','','',3,'');
 
-insert into im_view_columns values (3205,32,NULL,'Client',
+insert into im_view_columns (column_id, view_id, group_id, column_name, column_render_tcl,
+extra_select, extra_where, sort_order, visible_for) values (3205,32,NULL,'Client',
 '"<A HREF=/intranet/customers/view?customer_id=$customer_id>$customer_name</A>"','','',5,'');
 
-insert into im_view_columns values (3207,32,NULL,'Received',
+insert into im_view_columns (column_id, view_id, group_id, column_name, column_render_tcl,
+extra_select, extra_where, sort_order, visible_for) values (3207,32,NULL,'Received',
 '$received_date','','',7,'');
 
-insert into im_view_columns values (3209,32,NULL,'Invoice Amount',
+insert into im_view_columns (column_id, view_id, group_id, column_name, column_render_tcl,
+extra_select, extra_where, sort_order, visible_for) values (3209,32,NULL,'Invoice Amount',
 '$invoice_amount','','',9,'');
 
-insert into im_view_columns values (3211,32,NULL,'Amount Paid',
+insert into im_view_columns (column_id, view_id, group_id, column_name, column_render_tcl,
+extra_select, extra_where, sort_order, visible_for) values (3211,32,NULL,'Amount Paid',
 '$amount $currency','','',11,'');
 
-insert into im_view_columns values (3213,32,NULL,'Status',
+insert into im_view_columns (column_id, view_id, group_id, column_name, column_render_tcl,
+extra_select, extra_where, sort_order, visible_for) values (3213,32,NULL,'Status',
 '$payment_status_id','','',13,'');
 
-insert into im_view_columns values (3290,32,NULL,'Del',
+insert into im_view_columns (column_id, view_id, group_id, column_name, column_render_tcl,
+extra_select, extra_where, sort_order, visible_for) values (3290,32,NULL,'Del',
 '[if {1} {set ttt "<input type=checkbox name=del_payment value=$payment_id>"}]','','',99,'');
 
 --
