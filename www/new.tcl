@@ -53,7 +53,6 @@ if {"" == $payment_id} {
     set page_title "[_ intranet-payments.New_payment]" 
     set context_bar [im_context_bar $page_title]
     set button_name "[_ intranet-payments.Add_payment]"
-    set invoice_html [im_costs_select cost_id $cost_id "" [list "Deleted" "In Process"]]
 
     set cost_name [db_string cost_name "select cost_name from im_costs where cost_id=:cost_id"]
 
