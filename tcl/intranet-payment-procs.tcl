@@ -46,24 +46,24 @@ ad_proc -public im_payment_create_payment {
     
     db_1row cost_info "select cost_type_id, customer_id, provider_id, (amount * (1 + coalesce(vat,0)/100 + coalesce(tax,0)/100)) as amount, currency from im_costs where cost_id = :cost_id"
     if {$actual_amount eq ""} {
-	set actual_amount $amount
+	    set actual_amount $amount
     }
 
     if {[im_cost_type_is_invoice_or_quote_p $cost_type_id]} {
-	set company_id $customer_id
-	set provider_id [im_company_internal]
+        set company_id $customer_id
+        set provider_id [im_company_internal]
     } else {
-	set company_id $provider_id
-	set customer_id [im_company_internal]
+        set company_id $provider_id
+        set customer_id [im_company_internal]
     }
 
     if {$payment_type_id eq ""} {
-	set payment_method_id [db_string payment_method "select payment_method_id from im_invoices where invoice_id = :cost_id" -default ""]
-	if {$payment_method_id eq ""} {
-	    set payment_type_id [db_string default_payment_method "select default_payment_method_id from im_companies where company_id = :customer_id" -default 0]
-	} else {
-	    set payment_type_id $payment_method_id
-	}
+        set payment_method_id [db_string payment_method "select payment_method_id from im_invoices where invoice_id = :cost_id" -default ""]
+        if {$payment_method_id eq ""} {
+            set payment_type_id [db_string default_payment_method "select default_payment_method_id from im_companies where company_id = :customer_id" -default 0]
+        } else {
+            set payment_type_id $payment_method_id
+        }
     }
     
     db_dml new_payment_insert "
@@ -95,22 +95,32 @@ ad_proc -public im_payment_create_payment {
 		:peeraddr
     )" 
 
-    # ---------------------------------------------------------------
-    # Mark invoice as paid
-    # ---------------------------------------------------------------
-    
-    db_dml mark_invoice_as_paid "
-	update im_costs set
-		cost_status_id = [im_cost_status_paid]
-	where cost_id = :cost_id
-    "
-    
+
     # ---------------------------------------------------------------
     # Update Cost Items
     # ---------------------------------------------------------------
     
     # Update paid_amount
     im_cost_update_payments $cost_id 
+
+    # ---------------------------------------------------------------
+    # Mark invoice as paid
+    # ---------------------------------------------------------------
+    
+    set gap [db_string gap "select amount - paid_amount from im_costs where cost_id = :cost_id"]
+    
+    if {$gap <=0} {
+        set cost_status_id [im_cost_status_paid]
+    } else {
+        set cost_status_id [im_cost_status_partially_paid]
+    } 
+
+
+    db_dml mark_invoice_as_paid "
+        update im_costs set
+		    cost_status_id = :cost_status_id
+            where cost_id = :cost_id
+        "
 
     # Record the payment
     callback im_payment_after_create -payment_id $payment_id -payment_method_id $payment_type_id
