@@ -141,5 +141,8 @@ if {$mark_document_as_paid_p} {
 
 # Update paid_amount
 im_cost_update_payments $cost_id 
+ 
+# Record the payment
+callback im_payment_after_create -payment_id $payment_id -payment_method_id $payment_type_id
 
 ad_returnredirect $return_url
